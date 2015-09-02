@@ -4,12 +4,16 @@
 #include <QStyleOption>
 #include <QPainter>
 
-#include "graph/datum/datums/script_datum.h"
 #include "ui/script/script_pane.h"
 #include "ui/util/colors.h"
+#include "ui/main_window.h"
 
-ScriptPane::ScriptPane(ScriptDatum* datum, QWidget* parent)
-    : QWidget(parent), d(datum), editor(new ScriptEditor(datum, this)),
+#include "graph/node.h"
+#include "graph/graph.h"
+
+ScriptPane::ScriptPane(Node* node, QWidget* parent)
+    : QWidget(parent), node(node), graph(node->parentGraph()),
+      editor(new ScriptEditor(node, this)),
       output(new QPlainTextEdit), error(new QPlainTextEdit)
 {
     for (auto txt : {output, error})
@@ -36,21 +40,25 @@ ScriptPane::ScriptPane(ScriptDatum* datum, QWidget* parent)
     layout->setSpacing(10);
     layout->setContentsMargins(20, 0, 20, 0);
 
-    connect(datum, &ScriptDatum::changed,
-            this, &ScriptPane::onDatumChanged);
+    node->installWatcher(this);
+    graph->installWatcher(this);
 
     setLayout(layout);
-    onDatumChanged();
+    trigger(node->getState());
 }
 
-void ScriptPane::customizeUI(Ui::MainWindow* ui)
+ScriptPane::~ScriptPane()
 {
-    editor->customizeUI(ui);
+    if (node)
+        node->uninstallWatcher(this);
+    graph->uninstallWatcher(this);
 }
 
-void ScriptPane::onDatumChanged()
+void ScriptPane::trigger(const NodeState& state)
 {
-    QString o = d->getOutput();
+    editor->trigger(state);
+
+    QString o = QString::fromStdString(state.output);
     if (o.isEmpty())
     {
         output->hide();
@@ -61,7 +69,7 @@ void ScriptPane::onDatumChanged()
         output->show();
     }
 
-    QString e = d->getErrorTraceback();
+    QString e = QString::fromStdString(state.error);
     if (e.isEmpty())
     {
         error->hide();
@@ -73,6 +81,20 @@ void ScriptPane::onDatumChanged()
     }
 
     resizePanes();
+}
+
+void ScriptPane::trigger(const GraphState& state)
+{
+    if (state.nodes.count(node) == 0)
+    {
+        node = NULL;
+        static_cast<MainWindow*>(parent())->close();
+    }
+}
+
+void ScriptPane::customizeUI(Ui::MainWindow* ui)
+{
+    editor->customizeUI(ui);
 }
 
 void ScriptPane::resizeEvent(QResizeEvent* event)

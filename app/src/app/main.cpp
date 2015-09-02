@@ -7,11 +7,12 @@
 #include <QTextCodec>
 
 #include <iostream>
+#include <clocale>
 
 #include "app/app.h"
 #include "fab/fab.h"
+#include "graph/graph.h"
 #include "graph/hooks/hooks.h"
-#include "graph/node/proxy.h"
 
 int main(int argc, char *argv[])
 {
@@ -25,12 +26,15 @@ int main(int argc, char *argv[])
 
     // Initialize the _fabtypes Python package and the Python interpreter
     fab::preInit();
-    hooks::preInit();
-    proxy::preInit();
+    Graph::preInit();
+    AppHooks::preInit();
     Py_Initialize();
 
     // Create the Application object
     App a(argc, argv);
+
+    // Set locale to C to make atof correctly parse floats
+    setlocale(LC_NUMERIC, "C");
 
     for (auto arg : a.arguments().mid(1))
         if (arg.startsWith("--"))
@@ -61,6 +65,13 @@ int main(int argc, char *argv[])
 #endif
     d += "/sb";
     fab::postInit(d.toStdString().c_str());
+
+    // Install operator.or_ as a reducer for shapes
+    {
+        auto op = PyImport_ImportModule("operator");
+        Datum::installReducer(fab::ShapeType, PyObject_GetAttrString(op, "or_"));
+        Py_DECREF(op);
+    }
 
     // Check to make sure that the fab module exists
     PyObject* fab = PyImport_ImportModule("fab");
